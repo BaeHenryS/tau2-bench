@@ -1,3 +1,4 @@
+import copy
 from typing import Callable
 
 from loguru import logger
@@ -78,8 +79,15 @@ class EnvironmentEvaluator(EvaluatorBase[Message]):
         if env_kwargs is None:
             env_kwargs = {}
 
+        # Deep-copy env_kwargs for each environment so that mutable DB objects
+        # (e.g. FlightDB) are not shared between predicted and gold environments.
+        # Without this, set_state replay on the predicted environment mutates the
+        # shared DB, causing ToolMessage mismatches when gold_environment is created.
+        predicted_env_kwargs = copy.deepcopy(env_kwargs)
+        gold_env_kwargs = copy.deepcopy(env_kwargs)
+
         predicted_environment = environment_constructor(
-            solo_mode=solo_mode, **env_kwargs
+            solo_mode=solo_mode, **predicted_env_kwargs
         )
 
         predicted_environment.set_state(
@@ -89,7 +97,7 @@ class EnvironmentEvaluator(EvaluatorBase[Message]):
         )
 
         # Setting up gold environment
-        gold_environment = environment_constructor(**env_kwargs)
+        gold_environment = environment_constructor(**gold_env_kwargs)
         gold_environment.set_state(
             initialization_data=initialization_data,
             initialization_actions=initialization_actions,
@@ -280,8 +288,15 @@ class FullDuplexEnvironmentEvaluator(EvaluatorBase[Tick]):
         # Note: Audio native does not support task history, so we only use the simulation trajectory
         predicted_message_history = cls.ticks_to_message_history(full_trajectory)
 
+        # Deep-copy env_kwargs per environment so a shared mutable DB (e.g. FlightDB)
+        # is not aliased between the predicted and gold environments. Same fix as the
+        # half-duplex EnvironmentEvaluator above (verified on airline); applied here by
+        # analogy for the full-duplex / voice path.
+        predicted_env_kwargs = copy.deepcopy(env_kwargs)
+        gold_env_kwargs = copy.deepcopy(env_kwargs)
+
         predicted_environment = environment_constructor(
-            solo_mode=solo_mode, **env_kwargs
+            solo_mode=solo_mode, **predicted_env_kwargs
         )
         predicted_environment.set_state(
             initialization_data=initialization_data,
@@ -290,7 +305,7 @@ class FullDuplexEnvironmentEvaluator(EvaluatorBase[Tick]):
         )
 
         # Setting up gold environment
-        gold_environment = environment_constructor(**env_kwargs)
+        gold_environment = environment_constructor(**gold_env_kwargs)
         gold_environment.set_state(
             initialization_data=initialization_data,
             initialization_actions=initialization_actions,
