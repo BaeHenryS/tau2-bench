@@ -188,10 +188,30 @@ def to_litellm_messages(messages: list[Message]) -> list[dict]:
                     }
                     for tc in message.tool_calls
                 ]
+            content = message.content
+            # TAU2_PRESERVE_THINKING=1 (opt-in experiment): re-inject the turn's own
+            # reasoning (captured server-side by the vLLM reasoning parser and already
+            # stored verbatim in raw_data) into the POLICY-facing history, so prior
+            # assistant turns render with their <think> blocks instead of stripped.
+            # Embedding in content means the native chat template needs no changes.
+            # The user simulator is unaffected: its view is built via flip_roles from
+            # message.content, which this does not mutate.
+            if os.environ.get("TAU2_PRESERVE_THINKING") == "1":
+                try:
+                    _rc = (
+                        (message.raw_data or {})
+                        .get("choices", [{}])[0]
+                        .get("message", {})
+                        .get("reasoning_content")
+                    )
+                except (AttributeError, IndexError, TypeError):
+                    _rc = None
+                if _rc and _rc.strip():
+                    content = f"<think>\n{_rc.strip()}\n</think>\n\n{content or ''}"
             litellm_messages.append(
                 {
                     "role": "assistant",
-                    "content": message.content,
+                    "content": content,
                     "tool_calls": tool_calls,
                 }
             )
