@@ -620,6 +620,15 @@ class Task(BaseModel):
             default=None,
         ),
     ]
+    db_path: Annotated[
+        Optional[str],
+        Field(
+            description="Per-task environment database, as a basename resolved against "
+            "$PT_TAU2_DB_DIR at runtime (AReaL snapshot worlds). If None, the domain's "
+            "default database is used (backward compatible).",
+            default=None,
+        ),
+    ]
 
     def __str__(self) -> str:
         lines = []

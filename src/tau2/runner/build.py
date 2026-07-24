@@ -6,6 +6,8 @@ Uses the registry for name resolution. Callers who want full control can skip
 this layer and construct instances directly.
 """
 
+import functools
+import os
 import uuid
 from copy import deepcopy
 from pathlib import Path
@@ -307,11 +309,38 @@ def build_voice_user(
 # =============================================================================
 
 
+@functools.lru_cache(maxsize=None)
+def _pristine_task_db(domain: str, db_path: str):
+    """Load-once cache of per-task snapshot worlds (AReaL: 3 airline dbs, up to ~21MB
+    each). Callers receive deep copies (never this object): the same pristine backs the
+    orchestrator env AND the evaluator's predicted/gold envs across many simulations."""
+    root = os.environ.get("PT_TAU2_DB_DIR")
+    if not root:
+        raise RuntimeError(
+            f"task carries db_path={db_path!r} but PT_TAU2_DB_DIR is unset — point it "
+            "at the snapshot-db directory (fetch tau2_rl_database/ from "
+            "inclusionAI/AReaL-tau2-data)"
+        )
+    path = Path(root) / db_path
+    if not path.is_file():
+        raise FileNotFoundError(f"snapshot db {path} not found (PT_TAU2_DB_DIR={root!r})")
+    if domain == "airline":
+        from tau2.domains.airline.data_model import FlightDB
+
+        return FlightDB.load(path)
+    raise NotImplementedError(
+        f"per-task db_path loading is not implemented for domain {domain!r}"
+    )
+
+
 def _build_env_kwargs(config: RunConfig, task: Task) -> dict:
     """Build env_kwargs from a RunConfig for the environment constructor.
 
     Extracts retrieval-related config (banking_knowledge domain) and includes
-    the task reference needed for golden_retrieval policy.
+    the task reference needed for golden_retrieval policy. Tasks carrying a
+    db_path (AReaL snapshot worlds) get their own database instance — this
+    function feeds both the orchestrator's environment and the evaluator's
+    predicted/gold envs, so the whole simulation sees one consistent world.
     """
     env_kwargs: dict = {}
     retrieval_config = getattr(config, "retrieval_config", None)
@@ -321,6 +350,9 @@ def _build_env_kwargs(config: RunConfig, task: Task) -> dict:
         rk = dict(getattr(config, "retrieval_config_kwargs", None) or {})
         if rk:
             env_kwargs["retrieval_kwargs"] = rk
+    db_path = getattr(task, "db_path", None)
+    if db_path:
+        env_kwargs["db"] = _pristine_task_db(config.domain, db_path).model_copy(deep=True)
     return env_kwargs
 
 
