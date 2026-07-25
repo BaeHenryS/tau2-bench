@@ -54,12 +54,24 @@ def compute_simulation_rewards(
 
         for simulation in results.simulations:
             task = tasks[simulation.task_id]
+            # Per-task worlds (AReaL snapshot tasks): re-grading must build the
+            # evaluator's envs from the task's own db, exactly like the live runner
+            # (runner/build._build_env_kwargs) — otherwise snapshot tasks silently
+            # re-score against the default world.
+            env_kwargs = None
+            if getattr(task, "db_path", None):
+                from tau2.runner.build import _pristine_task_db
+
+                env_kwargs = {
+                    "db": _pristine_task_db(domain, task.db_path).model_copy(deep=True)
+                }
             computed_reward_info = evaluate_simulation(
                 domain=domain,
                 task=task,
                 simulation=simulation,
                 evaluation_type=evaluation_type,
                 solo_mode=solo_mode,
+                env_kwargs=env_kwargs,
             )
 
             # Update the simulation with new reward info
