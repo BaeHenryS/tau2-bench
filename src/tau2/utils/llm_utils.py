@@ -126,9 +126,17 @@ def get_response_cost(response: ModelResponse) -> float:
     try:
         cost = completion_cost(completion_response=response)
     except Exception as e:
-        logger.error(e)
+        # Local vLLM served names are never in litellm's cost map — this fired
+        # as a formatted ERROR on EVERY call (thousands per run), real GIL/IO
+        # churn in the single-process runner. Log once per model, at debug.
+        if response.model not in _cost_map_warned:
+            _cost_map_warned.add(response.model)
+            logger.debug(f"no cost-map entry for {response.model} (logged once): {e}")
         return 0.0
     return cost
+
+
+_cost_map_warned: set[str] = set()
 
 
 def get_response_usage(response: ModelResponse) -> Optional[dict]:
@@ -423,6 +431,12 @@ def generate(
         },
     }
     request_timestamp = datetime.now().isoformat()
+
+    # litellm's default request timeout is 600s; under client-side connection
+    # starvation (single-process GIL runner) a starved request holds its slot the
+    # full 600s and tau2 then REPLAYS the whole sim — measured hour-long straggler
+    # loops (retail + gemini harvests, 2026-07-29). Fail fast and retry instead.
+    kwargs.setdefault("timeout", float(os.environ.get("TAU2_LLM_TIMEOUT", "180")))
 
     start_time = time.perf_counter()
     try:

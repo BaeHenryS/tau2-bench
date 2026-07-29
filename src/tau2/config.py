@@ -21,9 +21,18 @@ DEFAULT_LLM_TEMPERATURE_USER = 0.0
 DEFAULT_LLM_ARGS_AGENT = {"temperature": DEFAULT_LLM_TEMPERATURE_AGENT}
 DEFAULT_LLM_ARGS_USER = {"temperature": DEFAULT_LLM_TEMPERATURE_USER}
 
-DEFAULT_LLM_NL_ASSERTIONS = "gpt-4.1-2025-04-14"
+# NL-judge is env-overridable so local-serve judges are CONFIG, not live edits:
+# the 2026-07-24 retail rows ran a local 27B judge via a 2-line uncommitted patch,
+# which later blocked a training launch on the dirty-repo guard (2026-07-29).
+# TAU2_NL_JUDGE takes a litellm model string (e.g. hosted_vllm/qwen35-27b-judge);
+# TAU2_NL_JUDGE_API_BASE points it at a local serve.
+import os as _os
+
+DEFAULT_LLM_NL_ASSERTIONS = _os.environ.get("TAU2_NL_JUDGE", "gpt-4.1-2025-04-14")
 DEFAULT_LLM_NL_ASSERTIONS_TEMPERATURE = 0.0
 DEFAULT_LLM_NL_ASSERTIONS_ARGS = {"temperature": DEFAULT_LLM_NL_ASSERTIONS_TEMPERATURE}
+if _os.environ.get("TAU2_NL_JUDGE_API_BASE"):
+    DEFAULT_LLM_NL_ASSERTIONS_ARGS["api_base"] = _os.environ["TAU2_NL_JUDGE_API_BASE"]
 
 DEFAULT_LLM_ENV_INTERFACE = "gpt-4.1-2025-04-14"
 DEFAULT_LLM_ENV_INTERFACE_TEMPERATURE = 0.0
